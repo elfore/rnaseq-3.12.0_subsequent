@@ -1,0 +1,18 @@
+# Input and Output
+input: "/mnt/gpfs/Users/yangjinxurong/projects/rnaseq_subsequent/assets/samplesheet_nfcore.csv"
+outdir: "/mnt/gpfs/Users/yangjinxurong/projects/rnaseq_subsequent/results/20260423"
+
+# Genome Resources
+fasta: "/mnt/gpfs/Dataset/05.genome/hg38/hg38.fa"
+gtf: "/mnt/gpfs/Users/yangjinxurong/projects/RNAseq/database/gencode.v47.annotation.gtf.gz"
+star_index: "/mnt/gpfs/Users/yangjinxurong/projects/RNAseq/database/star_index_hg38"
+salmon_index: "/mnt/gpfs/Users/yangjinxurong/projects/RNAseq/database/salmon_index_hg38"
+transcript_fasta: "/mnt/gpfs/Users/yangjinxurong/projects/RNAseq/database/rsem/genome.transcripts.fa"
+featurecounts_group_type: "gene_type"
+
+# Alignment
+aligner: "star_salmon"
+
+# QC
+skip_qc: false
+skip_multiqc: false

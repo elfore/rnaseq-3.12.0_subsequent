@@ -1,141 +1,172 @@
-# ![nf-core/rnaseq](docs/images/nf-core-rnaseq_logo_light.png#gh-light-mode-only) ![nf-core/rnaseq](docs/images/nf-core-rnaseq_logo_dark.png#gh-dark-mode-only)
+Process Input/Output Summary and Connection Audit
 
-[![AWS CI](https://img.shields.io/badge/CI%20tests-full%20size-FF9900?labelColor=000000&logo=Amazon%20AWS)](https://nf-co.re/rnaseq/results)[![Cite with Zenodo](http://img.shields.io/badge/DOI-10.5281/zenodo.1400710-1073c8?labelColor=000000)](https://doi.org/10.5281/zenodo.1400710)
+  1. Core Workflow (Pre-processing & Alignment)
 
-[![Nextflow](https://img.shields.io/badge/nextflow%20DSL2-%E2%89%A522.10.1-23aa62.svg)](https://www.nextflow.io/)
-[![run with conda](http://img.shields.io/badge/run%20with-conda-3EB049?labelColor=000000&logo=anaconda)](https://docs.conda.io/en/latest/)
-[![run with docker](https://img.shields.io/badge/run%20with-docker-0db7ed?labelColor=000000&logo=docker)](https://www.docker.com/)
-[![run with singularity](https://img.shields.io/badge/run%20with-singularity-1d355c.svg?labelColor=000000)](https://sylabs.io/docs/)
-[![Launch on Nextflow Tower](https://img.shields.io/badge/Launch%20%F0%9F%9A%80-Nextflow%20Tower-%234256e7)](https://tower.nf/launch?pipeline=https://github.com/nf-core/rnaseq)
 
-[![Get help on Slack](http://img.shields.io/badge/slack-nf--core%20%23rnaseq-4A154B?labelColor=000000&logo=slack)](https://nfcore.slack.com/channels/rnaseq)[![Follow on Twitter](http://img.shields.io/badge/twitter-%40nf__core-1DA1F2?labelColor=000000&logo=twitter)](https://twitter.com/nf_core)[![Follow on Mastodon](https://img.shields.io/badge/mastodon-nf__core-6364ff?labelColor=FFFFFF&logo=mastodon)](https://mstdn.science/@nf_core)[![Watch on YouTube](http://img.shields.io/badge/youtube-nf--core-FF0000?labelColor=000000&logo=youtube)](https://www.youtube.com/c/nf-core)
+  ┌──────────────────────┬───────────────────┬─────────────────────────────┬─────────────────────────────────────┬──────────────┐
+  │ Process              │ Input (Source)    │ Output (Emit)               │ Next Process (Target)               │ Audit Result │
+  ├──────────────────────┼───────────────────┼─────────────────────────────┼─────────────────────────────────────┼──────────────┤
+  │ INPUT_CHECK          │ ch_input (Params) │ .reads                      │ CAT_FASTQ                           │ PASS         │
+  │ PREPARE_GENOME       │ Reference Params  │ Various Indices             │ Alignment Subworkflows              │ PASS         │
+  │ CAT_FASTQ            │ ch_fastq.multiple │ .reads                      │ Trimming (TrimGalore/Fastp)         │ PASS         │
+  │ TRIMGALORE / FASTP   │ ch_cat_fastq      │ .reads                      │ BBMAP_BBSPLIT / SORTMERNA           │ PASS         │
+  │ BBMAP_BBSPLIT        │ .reads (Trimmed)  │ .primary_fastq              │ SORTMERNA / Aligner                 │ PASS         │
+  │ SORTMERNA            │ .reads (Filtered) │ .reads                      │ ALIGN_STAR / QUANTIFY_RSEM          │ PASS         │
+  │ ALIGN_STAR           │ .reads (Clean)    │ .bam, .bai, .bam_transcript │ BAM_DEDUP_..., QUANTIFY_STAR_SALMON │ PASS         │
+  │ QUANTIFY_STAR_SALMON │ .bam_transcript   │ .counts_gene                │ DESEQ2_DIFFERENTIAL, WGCNA          │ PASS         │
+  └──────────────────────┴───────────────────┴─────────────────────────────┴─────────────────────────────────────┴──────────────┘
 
-## Introduction
 
-**nf-core/rnaseq** is a bioinformatics pipeline that can be used to analyse RNA sequencing data obtained from organisms with a reference genome and annotation. It takes a samplesheet and FASTQ files as input, performs quality control (QC), trimming and (pseudo-)alignment, and produces a gene expression matrix and extensive QC report.
+  2. Advanced Analysis (New Modules)
 
-![nf-core/rnaseq metro map](docs/images/nf-core-rnaseq_metro_map_grey.png)
 
-1. Merge re-sequenced FastQ files ([`cat`](http://www.linfo.org/cat.html))
-2. Sub-sample FastQ files and auto-infer strandedness ([`fq`](https://github.com/stjude-rust-labs/fq), [`Salmon`](https://combine-lab.github.io/salmon/))
-3. Read QC ([`FastQC`](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/))
-4. UMI extraction ([`UMI-tools`](https://github.com/CGATOxford/UMI-tools))
-5. Adapter and quality trimming ([`Trim Galore!`](https://www.bioinformatics.babraham.ac.uk/projects/trim_galore/))
-6. Removal of genome contaminants ([`BBSplit`](http://seqanswers.com/forums/showthread.php?t=41288))
-7. Removal of ribosomal RNA ([`SortMeRNA`](https://github.com/biocore/sortmerna))
-8. Choice of multiple alignment and quantification routes:
-   1. [`STAR`](https://github.com/alexdobin/STAR) -> [`Salmon`](https://combine-lab.github.io/salmon/)
-   2. [`STAR`](https://github.com/alexdobin/STAR) -> [`RSEM`](https://github.com/deweylab/RSEM)
-   3. [`HiSAT2`](https://ccb.jhu.edu/software/hisat2/index.shtml) -> **NO QUANTIFICATION**
-9. Sort and index alignments ([`SAMtools`](https://sourceforge.net/projects/samtools/files/samtools/))
-10. UMI-based deduplication ([`UMI-tools`](https://github.com/CGATOxford/UMI-tools))
-11. Duplicate read marking ([`picard MarkDuplicates`](https://broadinstitute.github.io/picard/))
-12. Transcript assembly and quantification ([`StringTie`](https://ccb.jhu.edu/software/stringtie/))
-13. Create bigWig coverage files ([`BEDTools`](https://github.com/arq5x/bedtools2/), [`bedGraphToBigWig`](http://hgdownload.soe.ucsc.edu/admin/exe/))
-14. Extensive quality control:
-    1. [`RSeQC`](http://rseqc.sourceforge.net/)
-    2. [`Qualimap`](http://qualimap.bioinfo.cipf.es/)
-    3. [`dupRadar`](https://bioconductor.org/packages/release/bioc/html/dupRadar.html)
-    4. [`Preseq`](http://smithlabresearch.org/software/preseq/)
-    5. [`DESeq2`](https://bioconductor.org/packages/release/bioc/html/DESeq2.html)
-15. Pseudo-alignment and quantification ([`Salmon`](https://combine-lab.github.io/salmon/); _optional_)
-16. Present QC for raw read, alignment, gene biotype, sample similarity, and strand-specificity checks ([`MultiQC`](http://multiqc.info/), [`R`](https://www.r-project.org/))
+  ┌───────────────────┬─────────────────────────────┬───────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Process           │ Input (Source)              │ Output (Emit) │ Audit Result / Notes                                                                                 │
+  ├───────────────────┼─────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ DEEPVARIANT       │ .bam, .bai (Aligned)        │ .vcf, .tbi    │ PASS (Local SIF confirmed)                                                                           │
+  │ SNPEFF            │ .vcf (DeepVariant), db      │ .vcf          │ POTENTIAL ISSUE: vep_species is a string param, SNPEFF module expects path db. May need              │
+  │                   │ (vep_species)               │ (Annotated)   │ file(params.vep_species).                                                                            │
+  │ MAFTOOLS          │ .vcf (Annotated)            │ .plots        │ PASS                                                                                                 │
+  │ RMATS             │ cond1, bams1, cond2, bams2, │ .txt          │ CRITICAL: The grouping logic in rnaseq.nf (lines 1150-1175) is a heuristic meta.id.split('_')[0].    │
+  │                   │ gtf                         │               │ This depends strictly on naming conventions.                                                         │
+  │ SASHIMIPLOT       │ .txt (RMATS), bams          │ .pdf          │ PASS                                                                                                 │
+  │ DESEQ2_DIFF       │ .counts_gene, samplesheet   │ .results      │ PASS                                                                                                 │
+  │ CLUSTERPROFILER   │ .results (DESEQ2)           │ .pdf, .csv    │ PASS                                                                                                 │
+  │ REGULATORY_MINING │ .results (DESEQ2)           │ .pdf, .csv    │ PASS                                                                                                 │
+  │ WGCNA             │ .counts_gene                │ .pdf, .csv    │ PASS                                                                                                 │
+  │ STAR_FUSION       │ reads, genome_dir           │ .results      │ POTENTIAL ISSUE: Script assumes reads[0] and reads[1] (paired-end). Will fail on single-end samples. │
+  └───────────────────┴─────────────────────────────┴───────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-> **Note**
-> The SRA download functionality has been removed from the pipeline (`>=3.2`) and ported to an independent workflow called [nf-core/fetchngs](https://nf-co.re/fetchngs). You can provide `--nf_core_pipeline rnaseq` when running nf-core/fetchngs to download and auto-create a samplesheet containing publicly available samples that can be accepted directly as input by this pipeline.
+  ---
 
-> **Warning**
-> Quantification isn't performed if using `--aligner hisat2` due to the lack of an appropriate option to calculate accurate expression estimates from HISAT2 derived genomic alignments. However, you can use this route if you have a preference for the alignment, QC and other types of downstream analysis compatible with the output of HISAT2.
+  Detailed Connection "Double-Check"
 
-## Usage
+  1. Data Type Consistency:
+   - Most processes correctly use tuple val(meta), path(file) or just path(file).
+   - Warning: SNPEFF in workflows/rnaseq.nf is called with params.vep_species. In modules/local/snpeff.nf, it's defined as input: path db. If params.vep_species is just
+     "homo_sapiens", Nextflow will try to find a file named "homo_sapiens".
 
-> **Note**
-> If you are new to Nextflow and nf-core, please refer to [this page](https://nf-co.re/docs/usage/installation) on how
-> to set-up Nextflow. Make sure to [test your setup](https://nf-co.re/docs/usage/introduction#how-to-run-a-pipeline)
-> with `-profile test` before running the workflow on actual data.
+  2. Channel Splitting/Joining:
+   - DEEPVARIANT uses ch_genome_bam.join(ch_genome_bam_index, by: [0]). This is correct as it ensures the BAM and BAI for the same sample are paired.
+   - RMATS input construction in rnaseq.nf uses a .groupTuple() which might collect many samples into one condition. The module RMATS then joins these paths with commas
+     (bams1.join(',')), which is the correct format for rMATS --b1.
 
-First, prepare a samplesheet with your input data that looks as follows:
+  3. Optional Outputs:
+   - CLUSTERPROFILER and REGULATORY_MINING have optional: true for .csv outputs. This is safe.
 
-**samplesheet.csv**:
+  ---
 
-```csv
-sample,fastq_1,fastq_2,strandedness
-CONTROL_REP1,AEG588A1_S1_L002_R1_001.fastq.gz,AEG588A1_S1_L002_R2_001.fastq.gz,auto
-CONTROL_REP1,AEG588A1_S1_L003_R1_001.fastq.gz,AEG588A1_S1_L003_R2_001.fastq.gz,auto
-CONTROL_REP1,AEG588A1_S1_L004_R1_001.fastq.gz,AEG588A1_S1_L004_R2_001.fastq.gz,auto
-```
+  Suggestions for Improvement
 
-Each row represents a fastq file (single-end) or a pair of fastq files (paired end). Rows with the same sample identifier are considered technical replicates and merged automatically. The strandedness refers to the library preparation and will be automatically inferred if set to `auto`.
+   1. SNPEFF Fix: In workflows/rnaseq.nf, ensure the database input is handled correctly (either as a string or a file path depending on how snpEff is configured in your
+      environment).
+   2. STAR_FUSION Guard: Add a check to only run STAR_FUSION on paired-end reads, or update the module to handle single-end.
+   3. RMATS Conditions: The condition parsing meta.id.split('_')[0] should ideally be based on a column in the samplesheet rather than ID parsing to be more robust.
 
-> **Warning:**
-> Please provide pipeline parameters via the CLI or Nextflow `-params-file` option. Custom config files including those
-> provided by the `-c` Nextflow option can be used to provide any configuration _**except for parameters**_;
-> see [docs](https://nf-co.re/usage/configuration#custom-configuration-files).
+  Do you want me to apply any fixes based on these observations (e.g., the SNPEFF path or STAR_FUSION paired-end check)?
 
-Now, you can run the pipeline using:
 
-```bash
-nextflow run nf-core/rnaseq \
-    --input samplesheet.csv \
-    --outdir <OUTDIR> \
-    --genome GRCh37 \
-    -profile <docker/singularity/.../institute>
-```
+  # conda environments:
+#
+base                     /mnt/gpfs/Users/yangjinxurong/software/miniconda3
+gemini_env               /mnt/gpfs/Users/yangjinxurong/software/miniconda3/envs/gemini_env
+jdk17                    /mnt/gpfs/Users/yangjinxurong/software/miniconda3/envs/jdk17
+nextflow                 /mnt/gpfs/Users/yangjinxurong/software/miniconda3/envs/nextflow
+nf                       /mnt/gpfs/Users/yangjinxurong/software/miniconda3/envs/nf
+rnaseq                   /mnt/gpfs/Users/yangjinxurong/software/miniconda3/envs/rnaseq
+rnaseq_advanced          /mnt/gpfs/Users/yangjinxurong/software/miniconda3/envs/rnaseq_advanced
+rnaseq_final             /mnt/gpfs/Users/yangjinxurong/software/miniconda3/envs/rnaseq_final
+rnaseq_gatk4             /mnt/gpfs/Users/yangjinxurong/software/miniconda3/envs/rnaseq_gatk4
+rnaseq_rmats             /mnt/gpfs/Users/yangjinxurong/software/miniconda3/envs/rnaseq_rmats
+rseqc                    /mnt/gpfs/Users/yangjinxurong/software/miniconda3/envs/rseqc
+unicycler                /mnt/gpfs/Users/yangjinxurong/software/miniconda3/envs/unicycler
 
-For more details, please refer to the [usage documentation](https://nf-co.re/rnaseq/usage) and the [parameter documentation](https://nf-co.re/rnaseq/parameters).
+/mnt/gpfs/Users/yangjinxurong/software/miniconda3/envs/rnaseq_advanced/lib/R/library
 
-## Pipeline output
 
-To see the the results of a test run with a full size dataset refer to the [results](https://nf-co.re/rnaseq/results) tab on the nf-core website pipeline page.
-For more details about the output files and reports, please refer to the
-[output documentation](https://nf-co.re/rnaseq/output).
+-[nf-core/rnaseq] Pipeline completed successfully -
+WARN: Access to undefined parameter `email` -- Initialise it to a default value eg. `params.email = some_value`
+WARN: Access to undefined parameter `email_on_fail` -- Initialise it to a default value eg. `params.email_on_fail = some_value`
+Completed at: 23-Apr-2026 16:47:44
+Duration    : 3m 5s
+CPU hours   : 23.3 (98% cached)
+Succeeded   : 9
+Cached      : 70
 
-## Online videos
 
-A short talk about the history, current status and functionality on offer in this pipeline was given by Harshil Patel ([@drpatelh](https://github.com/drpatelh)) on [8th February 2022](https://nf-co.re/events/2022/bytesize-32-nf-core-rnaseq) as part of the nf-core/bytesize series.
++ STATUS=0
++ rm .sge_queue.config
++ echo ''
 
-You can find numerous talks on the [nf-core events page](https://nf-co.re/events) from various topics including writing pipelines/modules in Nextflow DSL2, using nf-core tooling, running nf-core pipelines as well as more generic content like contributing to Github. Please check them out!
++ echo ======================================
+======================================
+++ date '+%Y-%m-%d %H:%M:%S'
++ echo '  结束时间: 2026-04-23 16:47:44'
+  结束时间: 2026-04-23 16:47:44
++ [[ 0 -eq 0 ]]
++ echo '  状态: ✅ 成功'
+  状态: ✅ 成功
++ echo ''
 
-## Credits
++ echo '  主要输出:'
+  主要输出:
++ echo '  ├── /mnt/gpfs/Users/yangjinxurong/projects/rnaseq_subsequent//results/20260423/star/          比对 BAM'
+  ├── /mnt/gpfs/Users/yangjinxurong/projects/rnaseq_subsequent//results/20260423/star/          比对 BAM
++ echo '  ├── /mnt/gpfs/Users/yangjinxurong/projects/rnaseq_subsequent//results/20260423/salmon/        Salmon 定量'
+  ├── /mnt/gpfs/Users/yangjinxurong/projects/rnaseq_subsequent//results/20260423/salmon/        Salmon 定量
++ echo '  ├── /mnt/gpfs/Users/yangjinxurong/projects/rnaseq_subsequent//results/20260423/tximeta/       表达矩阵 (counts + TPM)'
+  ├── /mnt/gpfs/Users/yangjinxurong/projects/rnaseq_subsequent//results/20260423/tximeta/       表达矩阵 (counts + TPM)
++ echo '  └── /mnt/gpfs/Users/yangjinxurong/projects/rnaseq_subsequent//results/20260423/multiqc/       综合 QC 报告'
+  └── /mnt/gpfs/Users/yangjinxurong/projects/rnaseq_subsequent//results/20260423/multiqc/       综合 QC 报告
++ echo ======================================
+======================================
++ exit 0
 
-These scripts were originally written for use at the [National Genomics Infrastructure](https://ngisweden.scilifelab.se), part of [SciLifeLab](http://www.scilifelab.se/) in Stockholm, Sweden, by Phil Ewels ([@ewels](https://github.com/ewels)) and Rickard Hammarén ([@Hammarn](https://github.com/Hammarn)).
-
-The pipeline was re-written in Nextflow DSL2 and is primarily maintained by Harshil Patel ([@drpatelh](https://github.com/drpatelh)) from [Seqera Labs, Spain](https://seqera.io/).
-
-The pipeline workflow diagram was designed by Sarah Guinchard ([@G-Sarah](https://github.com/G-Sarah)) and James Fellows Yates ([@jfy133](https://github.com/jfy133)).
-
-Many thanks to other who have helped out along the way too, including (but not limited to):
-
-- [Alex Peltzer](https://github.com/apeltzer)
-- [Colin Davenport](https://github.com/colindaven)
-- [Denis Moreno](https://github.com/Galithil)
-- [Edmund Miller](https://github.com/Emiller88)
-- [Gregor Sturm](https://github.com/grst)
-- [Jacki Buros Novik](https://github.com/jburos)
-- [Lorena Pantano](https://github.com/lpantano)
-- [Matthias Zepper](https://github.com/MatthiasZepper)
-- [Maxime Garcia](https://github.com/maxulysse)
-- [Olga Botvinnik](https://github.com/olgabot)
-- [@orzechoj](https://github.com/orzechoj)
-- [Paolo Di Tommaso](https://github.com/pditommaso)
-- [Rob Syme](https://github.com/robsyme)
-
-## Contributions and Support
-
-If you would like to contribute to this pipeline, please see the [contributing guidelines](.github/CONTRIBUTING.md).
-
-For further information or help, don't hesitate to get in touch on the [Slack `#rnaseq` channel](https://nfcore.slack.com/channels/rnaseq) (you can join with [this invite](https://nf-co.re/join/slack)).
-
-## Citations
-
-If you use nf-core/rnaseq for your analysis, please cite it using the following doi: [10.5281/zenodo.1400710](https://doi.org/10.5281/zenodo.1400710)
-
-An extensive list of references for the tools used by the pipeline can be found in the [`CITATIONS.md`](CITATIONS.md) file.
-
-You can cite the `nf-core` publication as follows:
-
-> **The nf-core framework for community-curated bioinformatics pipelines.**
->
-> Philip Ewels, Alexander Peltzer, Sven Fillinger, Harshil Patel, Johannes Alneberg, Andreas Wilm, Maxime Ulysse Garcia, Paolo Di Tommaso & Sven Nahnsen.
->
-> _Nat Biotechnol._ 2020 Feb 13. doi: [10.1038/s41587-020-0439-x](https://dx.doi.org/10.1038/s41587-020-0439-x).
+[07/89242e] process > NFCORE_RNASEQ:RNASEQ:PREPARE_GENOME:GUNZIP_GTF (gencode.v47.annotation.gtf.gz)                        [100%] 1 of 1, cached: 1 ✔
+[f6/808dcf] process > NFCORE_RNASEQ:RNASEQ:PREPARE_GENOME:GTF2BED (gencode.v47.annotation.gtf)                              [100%] 1 of 1, cached: 1 ✔
+[4c/09fe95] process > NFCORE_RNASEQ:RNASEQ:PREPARE_GENOME:CUSTOM_GETCHROMSIZES (hg38.fa)                                    [100%] 1 of 1, cached: 1 ✔
+[12/86a552] process > NFCORE_RNASEQ:RNASEQ:INPUT_CHECK:SAMPLESHEET_CHECK (samplesheet_nfcore.csv)                           [100%] 1 of 1, cached: 1 ✔
+[-        ] process > NFCORE_RNASEQ:RNASEQ:CAT_FASTQ                                                                        -
+[de/6fa815] process > NFCORE_RNASEQ:RNASEQ:FASTQ_SUBSAMPLE_FQ_SALMON:FQ_SUBSAMPLE (CUDI50)                                  [100%] 1 of 1, cached: 1 ✔
+[02/8ab45b] process > NFCORE_RNASEQ:RNASEQ:FASTQ_SUBSAMPLE_FQ_SALMON:SALMON_QUANT (CUDI50)                                  [100%] 1 of 1, cached: 1 ✔
+[bd/cdba4b] process > NFCORE_RNASEQ:RNASEQ:FASTQ_FASTQC_UMITOOLS_TRIMGALORE:FASTQC (CUDI50)                                 [100%] 2 of 2, cached: 2 ✔
+[cc/72a445] process > NFCORE_RNASEQ:RNASEQ:FASTQ_FASTQC_UMITOOLS_TRIMGALORE:TRIMGALORE (CUDI50)                             [100%] 2 of 2, cached: 2 ✔
+[39/ff9e4c] process > NFCORE_RNASEQ:RNASEQ:ALIGN_STAR:STAR_ALIGN (CUDI50)                                                   [100%] 2 of 2, cached: 2 ✔
+[ac/8d883a] process > NFCORE_RNASEQ:RNASEQ:ALIGN_STAR:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_SORT (CUDI50)                        [100%] 2 of 2, cached: 2 ✔
+[72/034e56] process > NFCORE_RNASEQ:RNASEQ:ALIGN_STAR:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_INDEX (CUDI64)                       [100%] 2 of 2, cached: 2 ✔
+[4a/b072b1] process > NFCORE_RNASEQ:RNASEQ:ALIGN_STAR:BAM_SORT_STATS_SAMTOOLS:BAM_STATS_SAMTOOLS:SAMTOOLS_STATS (CUDI50)    [100%] 2 of 2, cached: 2 ✔
+[93/584d7b] process > NFCORE_RNASEQ:RNASEQ:ALIGN_STAR:BAM_SORT_STATS_SAMTOOLS:BAM_STATS_SAMTOOLS:SAMTOOLS_FLAGSTAT (CUDI64) [100%] 2 of 2, cached: 2 ✔
+[0b/513e95] process > NFCORE_RNASEQ:RNASEQ:ALIGN_STAR:BAM_SORT_STATS_SAMTOOLS:BAM_STATS_SAMTOOLS:SAMTOOLS_IDXSTATS (CUDI64) [100%] 2 of 2, cached: 2 ✔
+[3a/5253c8] process > NFCORE_RNASEQ:RNASEQ:QUANTIFY_STAR_SALMON:SALMON_QUANT (CUDI50)                                       [100%] 2 of 2, cached: 2 ✔
+[42/a0ce2e] process > NFCORE_RNASEQ:RNASEQ:QUANTIFY_STAR_SALMON:SALMON_TX2GENE (gencode.v47.annotation.gtf)                 [100%] 1 of 1, cached: 1 ✔
+[28/30b3c7] process > NFCORE_RNASEQ:RNASEQ:QUANTIFY_STAR_SALMON:SALMON_TXIMPORT                                             [100%] 1 of 1, cached: 1 ✔
+[21/4a24f6] process > NFCORE_RNASEQ:RNASEQ:QUANTIFY_STAR_SALMON:SALMON_SE_GENE (salmon_tx2gene.tsv)                         [100%] 1 of 1 ✔
+[6c/08246b] process > NFCORE_RNASEQ:RNASEQ:QUANTIFY_STAR_SALMON:SALMON_SE_GENE_LENGTH_SCALED (salmon_tx2gene.tsv)           [100%] 1 of 1 ✔
+[14/85f29d] process > NFCORE_RNASEQ:RNASEQ:QUANTIFY_STAR_SALMON:SALMON_SE_GENE_SCALED (salmon_tx2gene.tsv)                  [100%] 1 of 1 ✔
+[06/2cb0d9] process > NFCORE_RNASEQ:RNASEQ:QUANTIFY_STAR_SALMON:SALMON_SE_TRANSCRIPT (salmon_tx2gene.tsv)                   [100%] 1 of 1 ✔
+[dc/8ba8fe] process > NFCORE_RNASEQ:RNASEQ:DESEQ2_QC_STAR_SALMON                                                            [100%] 1 of 1 ✔
+[11/ac1aac] process > NFCORE_RNASEQ:RNASEQ:BAM_MARKDUPLICATES_PICARD:PICARD_MARKDUPLICATES (CUDI50)                         [100%] 2 of 2, cached: 2 ✔
+[85/93b42f] process > NFCORE_RNASEQ:RNASEQ:BAM_MARKDUPLICATES_PICARD:SAMTOOLS_INDEX (CUDI64)                                [100%] 2 of 2, cached: 2 ✔
+[6e/89ed54] process > NFCORE_RNASEQ:RNASEQ:BAM_MARKDUPLICATES_PICARD:BAM_STATS_SAMTOOLS:SAMTOOLS_STATS (CUDI50)             [100%] 2 of 2, cached: 2 ✔
+[3e/b94df5] process > NFCORE_RNASEQ:RNASEQ:BAM_MARKDUPLICATES_PICARD:BAM_STATS_SAMTOOLS:SAMTOOLS_FLAGSTAT (CUDI50)          [100%] 2 of 2, cached: 2 ✔
+[7f/5e3035] process > NFCORE_RNASEQ:RNASEQ:BAM_MARKDUPLICATES_PICARD:BAM_STATS_SAMTOOLS:SAMTOOLS_IDXSTATS (CUDI64)          [100%] 2 of 2, cached: 2 ✔
+[03/4e118f] process > NFCORE_RNASEQ:RNASEQ:STRINGTIE_STRINGTIE (CUDI50)                                                     [100%] 2 of 2, cached: 2 ✔
+[17/218450] process > NFCORE_RNASEQ:RNASEQ:GFFCOMPARE (Boundary_Optimization)                                               [100%] 2 of 2 ✔
+[cb/ef11ef] process > NFCORE_RNASEQ:RNASEQ:SUBREAD_FEATURECOUNTS (CUDI50)                                                   [100%] 2 of 2, cached: 2 ✔
+[6d/b20c74] process > NFCORE_RNASEQ:RNASEQ:MULTIQC_CUSTOM_BIOTYPE (CUDI64)                                                  [100%] 2 of 2, cached: 2 ✔
+[49/e7fe1c] process > NFCORE_RNASEQ:RNASEQ:BEDTOOLS_GENOMECOV (CUDI50)                                                      [100%] 2 of 2, cached: 2 ✔
+[af/117ac7] process > NFCORE_RNASEQ:RNASEQ:BEDGRAPH_BEDCLIP_BEDGRAPHTOBIGWIG_FORWARD:UCSC_BEDCLIP (CUDI64)                  [100%] 2 of 2, cached: 2 ✔
+[3f/a1169b] process > NFCORE_RNASEQ:RNASEQ:BEDGRAPH_BEDCLIP_BEDGRAPHTOBIGWIG_FORWARD:UCSC_BEDGRAPHTOBIGWIG (CUDI64)         [100%] 2 of 2, cached: 2 ✔
+[09/2d6927] process > NFCORE_RNASEQ:RNASEQ:BEDGRAPH_BEDCLIP_BEDGRAPHTOBIGWIG_REVERSE:UCSC_BEDCLIP (CUDI50)                  [100%] 2 of 2, cached: 2 ✔
+[10/6e89ea] process > NFCORE_RNASEQ:RNASEQ:BEDGRAPH_BEDCLIP_BEDGRAPHTOBIGWIG_REVERSE:UCSC_BEDGRAPHTOBIGWIG (CUDI50)         [100%] 2 of 2, cached: 2 ✔
+[b9/750c57] process > NFCORE_RNASEQ:RNASEQ:QUALIMAP_RNASEQ (CUDI50)                                                         [100%] 2 of 2, cached: 2 ✔
+[57/d64621] process > NFCORE_RNASEQ:RNASEQ:DUPRADAR (CUDI50)                                                                [100%] 2 of 2, cached: 2 ✔
+[35/ff5c0b] process > NFCORE_RNASEQ:RNASEQ:BAM_RSEQC:RSEQC_BAMSTAT (CUDI50)                                                 [100%] 2 of 2, cached: 2 ✔
+[35/2aeeda] process > NFCORE_RNASEQ:RNASEQ:BAM_RSEQC:RSEQC_INNERDISTANCE (CUDI64)                                           [100%] 2 of 2, cached: 2 ✔
+[92/a4e35b] process > NFCORE_RNASEQ:RNASEQ:BAM_RSEQC:RSEQC_INFEREXPERIMENT (CUDI64)                                         [100%] 2 of 2, cached: 2 ✔
+[17/d0f052] process > NFCORE_RNASEQ:RNASEQ:BAM_RSEQC:RSEQC_JUNCTIONANNOTATION (CUDI64)                                      [100%] 2 of 2, cached: 2 ✔
+[96/fae899] process > NFCORE_RNASEQ:RNASEQ:BAM_RSEQC:RSEQC_JUNCTIONSATURATION (CUDI50)                                      [100%] 2 of 2, cached: 2 ✔
+[be/adb5c0] process > NFCORE_RNASEQ:RNASEQ:BAM_RSEQC:RSEQC_READDISTRIBUTION (CUDI50)                                        [100%] 2 of 2, cached: 2 ✔
+[57/16d1d2] process > NFCORE_RNASEQ:RNASEQ:BAM_RSEQC:RSEQC_READDUPLICATION (CUDI50)                                         [100%] 2 of 2, cached: 2 ✔
+[d3/1e6532] process > NFCORE_RNASEQ:RNASEQ:CUSTOM_DUMPSOFTWAREVERSIONS (1)                                                  [100%] 1 of 1 ✔
+[87/525065] process > NFCORE_RNASEQ:RNASEQ:MULTIQC (1) 
